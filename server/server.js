@@ -81,7 +81,7 @@ function createRoom() {
   const room = {
     code: genCode(),
     phase: 'lobby',           // 'lobby' 或 'playing'
-    settings: { mapIndex: 0, teamGreen: 2, teamRed: 2, mode: 'tdm' }, // 两队人数可不同 + 模式
+    settings: { mapIndex: 0, teamGreen: 2, teamRed: 2, mode: 'tdm', randomSize: 'any' }, // 两队人数可不同 + 模式 + 随机图尺寸档
     clients: new Map(),       // ws -> { id, name, team, isHost }
     hostId: null,
     world: null,
@@ -181,7 +181,8 @@ function startGame(room) {
   const teamGreen = Math.max(room.settings.teamGreen, greenH, 1);
   const teamRed = Math.max(room.settings.teamRed, redH, 1);
 
-  room.world = game.createWorld({ mapIndex: room.settings.mapIndex, teamGreen: teamGreen, teamRed: teamRed, mode: room.settings.mode, humans: humans });
+  const randomSize = ['small', 'medium', 'large'].indexOf(room.settings.randomSize) >= 0 ? room.settings.randomSize : undefined;
+  room.world = game.createWorld({ mapIndex: room.settings.mapIndex, teamGreen: teamGreen, teamRed: teamRed, mode: room.settings.mode, randomSize: randomSize, humans: humans });
   room.inputs = {};
   for (const f of room.world.fighters) {
     if (f.controller === 'human') room.inputs[f.id] = Object.assign({}, game.EMPTY_INPUT);
@@ -337,6 +338,15 @@ function stepAllRooms() {
     // 兜底：任何一帧模拟/打包出错，只跳过这一帧并记录，绝不让整服崩、全员掉线
     try {
       game.updateWorld(room.world, room.inputs);
+      // 私密下发：谁本帧刚死、锁定了复活点，就只发给他本人（对手收不到，无法预知你的复活点）
+      const assigns = game.respawnAssignments(room.world);
+      if (assigns.length) {
+        for (const a of assigns) {
+          for (const [ws, c] of room.clients) {
+            if (c.id === a.id) { sendTo(ws, { type: 'respawnPoint', x: a.x, y: a.y }); break; }
+          }
+        }
+      }
       if (++room.tickCount % 2 === 0) {
         broadcastBinary(room, game.snapshotBinary(room.world)); // 高频快照走二进制，省带宽
         room.world.soundEvents = []; // 发完即清空；不发的那一 tick 事件会累积到下次一起发，不丢音效
@@ -446,6 +456,7 @@ function handleMessage(ws, msg) {
         if (Number.isInteger(msg.teamGreen)) room.settings.teamGreen = Math.max(1, Math.min(6, msg.teamGreen));
         if (Number.isInteger(msg.teamRed)) room.settings.teamRed = Math.max(1, Math.min(6, msg.teamRed));
         if (['tdm', 'gungame', 'koth', 'ctf'].indexOf(msg.mode) >= 0) room.settings.mode = msg.mode;
+        if (['any', 'small', 'medium', 'large'].indexOf(msg.randomSize) >= 0) room.settings.randomSize = msg.randomSize;
         sendLobby(room);
         broadcastRoomList(); // 人数上限变了，更新落地页列表
       }

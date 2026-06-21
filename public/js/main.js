@@ -189,6 +189,14 @@ function renderLobby(msg) {
 
 let mapScrollLeft = 0; // 记住地图轮播的横向滚动位置（大厅每次更新都会重建 DOM）
 const MODE_NAMES = { tdm: '团队死斗', gungame: '军备竞赛', koth: '占点', ctf: '夺旗' };
+
+// 按地图面积给一个尺寸档 + 推荐人数角标
+function mapSizeTier(w, h) {
+  const area = w * h;
+  if (area < 600000) return { cls: 'sz-s', label: '小·1~2v2' };
+  if (area >= 1050000) return { cls: 'sz-l', label: '大·4~6v6' };
+  return { cls: 'sz-m', label: '中·2~3v3' };
+}
 function renderHostSettings(hostBox, msg) {
   hostBox.innerHTML = '<h3>房主设置</h3>';
 
@@ -202,9 +210,7 @@ function renderHostSettings(hostBox, msg) {
     const btn = document.createElement('button');
     btn.textContent = MODE_NAMES[mode];
     if ((msg.settings.mode || 'tdm') === mode) btn.classList.add('sel');
-    btn.addEventListener('click', function() {
-      netSetSettings(msg.settings.mapIndex, msg.settings.teamGreen, msg.settings.teamRed, mode);
-    });
+    btn.addEventListener('click', function() { netSetSettings({ mode: mode }); });
     modeGroup.appendChild(btn);
   });
   modeRow.appendChild(modeGroup);
@@ -228,14 +234,20 @@ function renderHostSettings(hostBox, msg) {
     const pv = document.createElement('canvas');
     pv.width = 180; pv.height = 120;
     drawMapPreview(pv, map);
+    // 尺寸角标：按面积推荐人数规模（随机图不标，尺寸开局才定）
+    if (!map.random) {
+      const badge = document.createElement('div');
+      const tier = mapSizeTier(map.width, map.height);
+      badge.className = 'map-badge ' + tier.cls;
+      badge.textContent = tier.label;
+      card.appendChild(badge);
+    }
     const label = document.createElement('div');
     label.className = 'map-label';
     label.textContent = map.name;
     card.appendChild(pv);
     card.appendChild(label);
-    card.addEventListener('click', function() {
-      netSetSettings(map.index, msg.settings.teamGreen, msg.settings.teamRed);
-    });
+    card.addEventListener('click', function() { netSetSettings({ mapIndex: map.index }); });
     track.appendChild(card);
   });
 
@@ -268,10 +280,7 @@ function renderHostSettings(hostBox, msg) {
       if (n === curVal) btn.classList.add('sel');
       if (n < humans[teamKey]) btn.disabled = true; // 比真人还少没意义，禁掉
       btn.addEventListener('click', function() {
-        // 只改本队人数，另一队保持当前值
-        const g = teamKey === 'green' ? n : msg.settings.teamGreen;
-        const r = teamKey === 'red' ? n : msg.settings.teamRed;
-        netSetSettings(msg.settings.mapIndex, g, r);
+        netSetSettings(teamKey === 'green' ? { teamGreen: n } : { teamRed: n });
       });
       group.appendChild(btn);
     });
@@ -280,6 +289,25 @@ function renderHostSettings(hostBox, msg) {
   }
   hostBox.appendChild(buildSizeRow('绿队', 'green', msg.settings.teamGreen, '#4caf50'));
   hostBox.appendChild(buildSizeRow('红队', 'red', msg.settings.teamRed, '#e05050'));
+
+  // 随机地图尺寸档：只在选中"随机地图"时显示
+  const selMap = msg.maps[msg.settings.mapIndex];
+  if (selMap && selMap.random) {
+    const szRow = document.createElement('div');
+    szRow.className = 'setup-row';
+    szRow.innerHTML = '<span class="setup-label">随机地图尺寸：</span>';
+    const szGroup = document.createElement('span');
+    szGroup.className = 'btn-group';
+    [['any', '任意'], ['small', '小'], ['medium', '中'], ['large', '大']].forEach(function(pair) {
+      const btn = document.createElement('button');
+      btn.textContent = pair[1];
+      if ((msg.settings.randomSize || 'any') === pair[0]) btn.classList.add('sel');
+      btn.addEventListener('click', function() { netSetSettings({ randomSize: pair[0] }); });
+      szGroup.appendChild(btn);
+    });
+    szRow.appendChild(szGroup);
+    hostBox.appendChild(szRow);
+  }
 
   // 开始按钮
   const startBtn = document.createElement('button');

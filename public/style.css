@@ -188,6 +188,7 @@ h1 {
   gap: 18px;
 }
 .map-card {
+  position: relative;
   background: #2b2b3a;
   border: 2px solid #555;
   border-radius: 8px;
@@ -195,6 +196,22 @@ h1 {
   cursor: pointer;
   transition: border-color 0.15s, transform 0.15s;
 }
+/* 地图尺寸/推荐人数角标 */
+.map-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: bold;
+  color: #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.map-badge.sz-s { background: #4a8fb5; }
+.map-badge.sz-m { background: #4a9a5a; }
+.map-badge.sz-l { background: #c2683a; }
 .map-card:hover {
   border-color: #5fd35f;
   transform: translateY(-3px);

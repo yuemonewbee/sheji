@@ -68,7 +68,7 @@
     // 子弹
     var bullets = [];
     var bn = u16();
-    for (var b = 0; b < bn; b++) { var bx = u16(), by = u16(), bw = u8(); bullets.push({ x: bx, y: by, w: bw }); }
+    for (var b = 0; b < bn; b++) { var bx = u16(), by = u16(), bcode = u8(); bullets.push({ x: bx, y: by, w: bcode & 0x0f, team: (bcode & 0x10) ? 'red' : 'green' }); }
     // 手雷
     var grenades2 = [];
     var gn = u8();

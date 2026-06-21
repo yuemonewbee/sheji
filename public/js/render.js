@@ -65,12 +65,33 @@ function drawFrame(ctx) {
   // 2.6) 夺旗：基地旗座（家的位置）
   if (cfg.mode === 'ctf') drawFlagBases(ctx, cfg);
 
-  // 3) 子弹：狙击弹紫色且略大，方便在杂乱弹幕里看清弹道、调整瞄准；其余金黄
+  // 3) 子弹：按敌我上色——敌方=醒目警示色，友方(含自己)=低调冷色。
+  //    一眼区分"会打到我的"和"友军的"。观战时我没队伍，退化为绿/红队伍色。
+  const myTeam = myTeamOf(st); // null = 观战
   for (const b of st.bullets) {
     const isSniper = b.w === 3;
-    ctx.fillStyle = isSniper ? '#c56cff' : '#ffd54a';
+    let isEnemy;
+    if (myTeam) isEnemy = (b.team !== myTeam);       // 有队伍：敌我相对我自己
+    else isEnemy = (b.team === 'red');                // 观战：红队当"敌方色"，绿队"友方色"
+    // 敌方：暖色警示（狙击更红更亮）；友方：冷色低调
+    let color, r;
+    if (isEnemy) {
+      color = isSniper ? '#ff3b6b' : '#ff7a3a';       // 红粉(狙) / 橙(普通)
+      r = isSniper ? cfg.bulletRadius + 2.5 : cfg.bulletRadius + 0.5;
+    } else {
+      color = isSniper ? '#7fd0ff' : '#7fe0c0';       // 浅蓝(狙) / 青绿(普通)
+      r = isSniper ? cfg.bulletRadius + 2 : cfg.bulletRadius;
+    }
+    // 威胁最大的敌方狙击弹加一圈光晕
+    if (isEnemy && isSniper) {
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, r + 3, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,59,107,0.28)';
+      ctx.fill();
+    }
     ctx.beginPath();
-    ctx.arc(b.x, b.y, isSniper ? cfg.bulletRadius + 2 : cfg.bulletRadius, 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
     ctx.fill();
   }
 
@@ -108,6 +129,12 @@ function drawFrame(ctx) {
     ctx.strokeStyle = '#1c2a14';
     ctx.lineWidth = 1.5;
     ctx.stroke();
+  }
+
+  // 5.5) 我的复活点预览：死亡等待期间显示（只有我自己能看到），方便提前规划走位
+  const meF = net.yourFighterId ? st.fighters.find((f) => f.id === net.yourFighterId) : null;
+  if (meF && !meF.alive && net.myRespawn) {
+    drawRespawnMarker(ctx, net.myRespawn.x, net.myRespawn.y, meF.team, meF.respawnTimer);
   }
 
   // 6) 战斗单位
@@ -492,6 +519,47 @@ function drawZone(ctx, z, st) {
   ctx.setLineDash([]);
   ctx.fillStyle = lc; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
   ctx.fillText(label, z.x, z.y - z.radius - 8);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+// 我的复活点标记：脉动的队伍色光环 + 向下箭头 + "复活 Xs" 倒计时（仅本人可见）
+function drawRespawnMarker(ctx, x, y, team, respawnTimer) {
+  const col = team === 'red' ? '#ff7a7a' : '#5fd35f';
+  const t = performance.now() / 1000;
+  const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+  ctx.save();
+  // 脉动的扩散光环（两层）
+  for (let i = 0; i < 2; i++) {
+    const rr = 16 + i * 9 + pulse * 6;
+    ctx.beginPath();
+    ctx.arc(x, y, rr, 0, Math.PI * 2);
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = (0.7 - i * 0.3) * (0.6 + 0.4 * pulse);
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // 实心小圆心
+  ctx.beginPath();
+  ctx.arc(x, y, 6, 0, Math.PI * 2);
+  ctx.fillStyle = col;
+  ctx.fill();
+  // 上方下坠的箭头（指向落点）
+  const ay = y - 40 - pulse * 6;
+  ctx.beginPath();
+  ctx.moveTo(x - 7, ay); ctx.lineTo(x + 7, ay); ctx.lineTo(x, ay + 11); ctx.closePath();
+  ctx.fillStyle = col;
+  ctx.fill();
+  // 倒计时文字
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+  const secs = Math.max(0, Math.ceil((respawnTimer || 0) / 60));
+  const label = '复活 ' + secs + 's';
+  ctx.strokeText(label, x, y - 48);
+  ctx.fillText(label, x, y - 48);
   ctx.textAlign = 'left';
   ctx.restore();
 }

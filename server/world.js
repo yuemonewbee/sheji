@@ -72,6 +72,38 @@ const MAPS = [
     ],
   },
   {
+    // 大图：双子堡垒，适合 4v4~6v6（中心 x=700, y=440）
+    id: 'twin', name: '双子堡垒（大）', width: 1400, height: 880,
+    greenBase: { x: 100, y: 440 }, redBase: { x: 1300, y: 440 },
+    walls: [
+      // 中央双柱
+      { x: 660, y: 250, w: 28, h: 160 }, { x: 712, y: 470, w: 28, h: 160 },
+      // 上下横墙
+      { x: 560, y: 180, w: 280, h: 24 }, { x: 560, y: 676, w: 280, h: 24 },
+      // 左右内堡（对称）
+      { x: 340, y: 300, w: 24, h: 280 }, { x: 1036, y: 300, w: 24, h: 280 },
+      { x: 340, y: 300, w: 150, h: 24 }, { x: 910, y: 300, w: 150, h: 24 },
+      { x: 340, y: 556, w: 150, h: 24 }, { x: 910, y: 556, w: 150, h: 24 },
+      // 四角小掩体
+      { x: 200, y: 140, w: 120, h: 24 }, { x: 1080, y: 140, w: 120, h: 24 },
+      { x: 200, y: 716, w: 120, h: 24 }, { x: 1080, y: 716, w: 120, h: 24 },
+    ],
+  },
+  {
+    // 超大图：开阔战场，适合 6v6（中心 x=760, y=480）
+    id: 'expanse', name: '辽阔战场（超大）', width: 1520, height: 960,
+    greenBase: { x: 100, y: 480 }, redBase: { x: 1420, y: 480 },
+    walls: [
+      { x: 736, y: 360, w: 48, h: 240 },                                  // 中央长柱
+      { x: 480, y: 220, w: 24, h: 200 }, { x: 1016, y: 220, w: 24, h: 200 },
+      { x: 480, y: 540, w: 24, h: 200 }, { x: 1016, y: 540, w: 24, h: 200 },
+      { x: 600, y: 200, w: 200, h: 24 }, { x: 720, y: 736, w: 200, h: 24 },
+      { x: 260, y: 300, w: 160, h: 24 }, { x: 1100, y: 300, w: 160, h: 24 },
+      { x: 260, y: 636, w: 160, h: 24 }, { x: 1100, y: 636, w: 160, h: 24 },
+      { x: 300, y: 460, w: 24, h: 120 }, { x: 1196, y: 460, w: 24, h: 120 },
+    ],
+  },
+  {
     // 中图：之字走廊（中心 x=520, y=350）
     id: 'zigzag', name: '之字走廊', width: 1040, height: 700,
     greenBase: { x: 90, y: 350 }, redBase: { x: 950, y: 350 },
@@ -187,6 +219,7 @@ function createFighter(id, x, y, team, controller, name) {
     grenadeCooldown: 0, grenades: START_GRENADES,
     weapon: 'pistol', ammo: Infinity, // 当前武器与剩余弹药（手枪无限）
     invuln: SPAWN_PROTECT, // 出生无敌帧（开局/复活有保护）
+    respawnX: null, respawnY: null, // 死亡时锁定的复活点（仅本人可见）
     level: 0,   // 军备竞赛进度（仅 gungame 用）
     kills: 0,   // 本场个人击杀数
     deaths: 0,  // 本场个人阵亡数
@@ -428,11 +461,21 @@ function mapConnected(map) {
 }
 
 // 现场生成一张左右镜像对称的随机地图（保证公平 + 连通），失败兜底用第 0 张
-function generateRandomMap() {
-  const WIDTHS = [960, 1040, 1120], HEIGHTS = [640, 700, 760];
+// sizeClass: 'small' | 'medium' | 'large' | undefined(随机，含大图)
+function generateRandomMap(sizeClass) {
+  // 三档尺寸，随机时大图也会出现（不再封顶 1120×760）
+  const SIZES = {
+    small:  { W: [800, 900],         H: [560, 620] },
+    medium: { W: [1000, 1080, 1160], H: [680, 720] },
+    large:  { W: [1280, 1400, 1520], H: [820, 900, 960] },
+  };
+  const pickArr = (a) => a[Math.floor(Math.random() * a.length)];
+  const fixed = SIZES[sizeClass] ? sizeClass : null; // 只认 small/medium/large，其余当"任意"
   for (let attempt = 0; attempt < 50; attempt++) {
-    const width = WIDTHS[Math.floor(Math.random() * WIDTHS.length)];
-    const height = HEIGHTS[Math.floor(Math.random() * HEIGHTS.length)];
+    const cls = fixed || pickArr(['small', 'medium', 'large', 'large']); // 任意时偏向出大图
+    const S = SIZES[cls];
+    const width = pickArr(S.W);
+    const height = pickArr(S.H);
     const cx = width / 2;
     const greenBase = { x: 90, y: Math.round(height / 2) };
     const redBase = { x: width - 90, y: Math.round(height / 2) };
@@ -445,8 +488,10 @@ function generateRandomMap() {
       walls.push({ x: Math.round(cx - cw / 2), y: Math.round(height / 2 - ch / 2), w: cw, h: ch });
     }
 
-    // 左半区随机若干墙，逐个镜像到右半区
-    const n = 3 + Math.floor(Math.random() * 4); // 3..6
+    // 墙数随场地面积缩放：大图多放墙，避免空旷（基准 1040×700 ≈ 4 道）
+    const area = width * height;
+    const baseN = Math.round(area / 182000); // 每 ~18.2万像素一道墙
+    const n = Math.max(3, baseN - 1) + Math.floor(Math.random() * 4); // baseN 附近 +0..3
     for (let i = 0; i < n; i++) {
       const horizontal = Math.random() < 0.5;
       const w = horizontal ? (60 + Math.floor(Math.random() * 180)) : (20 + Math.floor(Math.random() * 16));
@@ -473,7 +518,7 @@ function generateRandomMap() {
 // 真人按 spec 放入对应队伍，其余用电脑补到各队设定人数（两队可不同）。
 function createWorld(spec) {
   let map = MAPS[spec.mapIndex] || MAPS[0];
-  if (map.random) map = generateRandomMap(); // 选了"随机地图"就现场生成一张全新的
+  if (map.random) map = generateRandomMap(spec.randomSize); // 选了"随机地图"就现场生成（可指定尺寸档）
   const teamGreen = Math.max(1, spec.teamGreen || 2);
   const teamRed = Math.max(1, spec.teamRed || 2);
 
@@ -623,10 +668,15 @@ function pickSpawnPoint(world, f) {
   return best || { x: world.width / 2, y: world.height / 2 };
 }
 
-function killFighter(f) {
+function killFighter(world, f) {
   f.hp = 0; f.alive = false; f.respawnTimer = RESPAWN_TIME;
   f.deaths++; // 不管被子弹还是手雷打死，统一在这里记一次阵亡
   f.streak = 0; f.streakTimer = 0; // 阵亡清空连杀
+  // 死亡瞬间就锁定复活点，供本人提前预览（服务器私密发给本人，对手收不到、无法预知）
+  const spot = pickSpawnPoint(world, f);
+  f.respawnX = spot.x; f.respawnY = spot.y;
+  if (!world.respawnAssigned) world.respawnAssigned = [];
+  world.respawnAssigned.push({ id: f.id, x: Math.round(spot.x), y: Math.round(spot.y) });
 }
 
 function creditKill(world, killerId, victim) {
@@ -756,8 +806,11 @@ function creditDamage(world, attackerId, victim, amount) {
 }
 
 function respawnFighter(world, f) {
-  const spot = pickSpawnPoint(world, f);
-  f.x = spot.x; f.y = spot.y; f.alive = true; f.hp = f.maxHp;
+  // 用死亡时锁定的复活点（和本人预览的一致）；万一没有就现选一个兜底
+  const x = (f.respawnX != null) ? f.respawnX : pickSpawnPoint(world, f).x;
+  const y = (f.respawnY != null) ? f.respawnY : pickSpawnPoint(world, f).y;
+  f.x = x; f.y = y; f.alive = true; f.hp = f.maxHp;
+  f.respawnX = null; f.respawnY = null;
   f.invuln = SPAWN_PROTECT; // 复活给一段出生保护
   if (world.mode === 'gungame') {
     f.weapon = GUNGAME_LADDER[f.level]; f.ammo = Infinity; f.grenades = 0; // 复活回到当前军备等级的枪
@@ -970,7 +1023,7 @@ function updateBullets(world) {
         creditDamage(world, b.ownerId, f, Math.min(dmg, f.hp)); // 有效伤害（不计溢出击杀）
         f.hp -= dmg; b.alive = false;
         if (f.hp <= 0) {
-          killFighter(f); creditKill(world, b.ownerId, f);
+          killFighter(world, f); creditKill(world, b.ownerId, f);
           world.soundEvents.push({ type: 'death', victim: f.id, by: b.ownerId, w: b.wpn, dmg: dmg });
         } else {
           world.soundEvents.push({ type: 'hit', victim: f.id, by: b.ownerId, w: b.wpn, dmg: dmg });
@@ -1024,7 +1077,7 @@ function explode(world, g) {
       if (isEnemy) creditDamage(world, g.ownerId, f, Math.min(dmg, f.hp)); // 只算对敌人的有效伤害
       f.hp -= dmg;
       if (f.hp <= 0) {
-        killFighter(f); creditKill(world, g.ownerId, f);
+        killFighter(world, f); creditKill(world, g.ownerId, f);
         world.soundEvents.push({ type: 'death', victim: f.id, by: g.ownerId, dmg: dmg });
       } else {
         world.soundEvents.push({ type: 'hit', victim: f.id, by: g.ownerId, dmg: dmg });
@@ -1176,6 +1229,7 @@ function updateWorld(world, inputs) {
   // 开局倒计时：冻结全场（不移动/不开火/不刷新），只递减计时；结束后正常开打。
   // 期间也不递减出生保护，所以"开打瞬间"大家仍有完整 1.5s 保护。
   if (world.countdown > 0) { world.countdown--; return; }
+  world.respawnAssigned = []; // 本帧新锁定的复活点（供服务器私密下发给本人）
   for (const f of world.fighters) tickFighter(world, f);
   for (const f of world.fighters) {
     if (f.controller === 'human') {
@@ -1208,7 +1262,8 @@ function snapshot(world) {
   // 子弹扁平成 [x,y,w, x,y,w…]：x、y 加上武器序号 w（客户端按 w 给弹丸上色）。
   // w 多是 0/1（手枪/冲锋枪），重复值多，配合 WebSocket 压缩几乎不增带宽。
   const bullets = [];
-  for (const b of world.bullets) bullets.push(Math.round(b.x), Math.round(b.y), b.wpn || 0);
+  // 第三值编码：低 4 位 = 武器序号，bit4(0x10) = 红队子弹（绿队为 0）。客户端据此判敌我上色。
+  for (const b of world.bullets) bullets.push(Math.round(b.x), Math.round(b.y), (b.wpn || 0) | (b.team === 'red' ? 0x10 : 0));
   return {
     // 注意：不再每帧重发 team/controller/name/color/maxHp，这些在 roster 里，客户端按 id 合并
     fighters: world.fighters.map((f) => ({
@@ -1332,7 +1387,7 @@ function snapshotBinary(world) {
   for (const b of B) {
     buf.writeUInt16LE(Math.round(b.x) & 65535, o); o += 2;
     buf.writeUInt16LE(Math.round(b.y) & 65535, o); o += 2;
-    buf.writeUInt8(b.wpn || 0, o); o += 1;
+    buf.writeUInt8((b.wpn || 0) | (b.team === 'red' ? 0x10 : 0), o); o += 1; // 低4位武器，bit4=红队
   }
   // 手雷
   buf.writeUInt8(G.length, o); o += 1;
@@ -1453,7 +1508,12 @@ function assignJoiner(world, id, name) {
   return f;
 }
 
+// 本帧新锁定的复活点列表（server 用来私密下发给各自本人）
+function respawnAssignments(world) {
+  return world.respawnAssigned || [];
+}
+
 module.exports = {
   createWorld, updateWorld, snapshot, snapshotBinary, roster, mapConfig, mapList, MAPS,
-  EMPTY_INPUT, assignJoiner,
+  EMPTY_INPUT, assignJoiner, respawnAssignments,
 };

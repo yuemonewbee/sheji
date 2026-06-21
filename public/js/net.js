@@ -17,6 +17,7 @@ const net = {
   rosterById: {},      // 单位静态信息（队伍/名字/颜色/控制者/maxHp），按 id 索引，收到快照时合并
   rosterByNid: {},     // 同上，按 nid（数字 id）索引，给二进制快照解码用
   yourNid: null,       // 我的 nid
+  myRespawn: null,     // 我本次的复活点 {x,y}（服务器私密下发，仅本人可见）
   lobby: null,         // 大厅信息：玩家列表、设置、地图列表
   _playedEnd: false,   // 是否已播过本局胜负音
 
@@ -106,7 +107,12 @@ function handleMessage(msg) {
       net.yourFighterId = msg.yourFighterId;
       net.snapshots = []; // 清空插值缓冲，避免沿用上一局的位置
       net.state = null;
+      net.myRespawn = null; // 清掉上一局残留的复活点预览
       if (net.onStarted) net.onStarted(msg);
+      break;
+    case 'respawnPoint':
+      // 服务器私密告知我本次的复活点（对手收不到这条），死亡期间预览用
+      net.myRespawn = { x: msg.x, y: msg.y };
       break;
     case 'roster': {
       // 名册更新：重建 id->静态信息 与 nid->静态信息 两张映射，并算出"我"的 nid
@@ -130,7 +136,7 @@ function handleMessage(msg) {
       const bf = snap.bullets;
       if (bf && bf.length && typeof bf[0] === 'number') {
         const arr = [];
-        for (let i = 0; i < bf.length; i += 3) arr.push({ x: bf[i], y: bf[i + 1], w: bf[i + 2] });
+        for (let i = 0; i < bf.length; i += 3) { const code = bf[i + 2]; arr.push({ x: bf[i], y: bf[i + 1], w: code & 0x0f, team: (code & 0x10) ? 'red' : 'green' }); }
         snap.bullets = arr;
       }
       ingestSnapshot(snap);
@@ -287,7 +293,8 @@ function netLeaveRoom() { netSend({ type: 'leaveRoom' }); }
 
 function netSetName(name) { netSend({ type: 'setName', name: name }); }
 function netSetTeam(team) { netSend({ type: 'setTeam', team: team }); }
-function netSetSettings(mapIndex, teamGreen, teamRed, mode) { netSend({ type: 'setSettings', mapIndex: mapIndex, teamGreen: teamGreen, teamRed: teamRed, mode: mode }); }
+// 部分更新房间设置：只发传入的字段（服务器按字段合并），patch = {mapIndex?,teamGreen?,teamRed?,mode?,randomSize?}
+function netSetSettings(patch) { netSend(Object.assign({ type: 'setSettings' }, patch || {})); }
 function netStart() { netSend({ type: 'start' }); }
 function netRestart() { netSend({ type: 'restart' }); }
 function netToLobby() { netSend({ type: 'toLobby' }); }
