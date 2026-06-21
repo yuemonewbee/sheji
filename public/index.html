@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>网页射击 · 联机对战</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <button id="mute-btn" title="音效开关">🔊</button>
+  <h1>2D 射击 · 联机对战</h1>
+  <p class="hint"><b>WASD</b> 移动，鼠标瞄准，<b>左键开枪</b>，<b>右键扔手雷</b>（捡黄箱补雷）。捡地上的<b>彩色武器</b>换枪，弹药用尽自动换回手枪。</p>
+
+  <!-- 进场前的名字输入弹窗（不填直接确定 = 默认名） -->
+  <div id="name-modal">
+    <div class="modal-box">
+      <h2>给自己取个名字</h2>
+      <input id="name-modal-input" maxlength="12" placeholder="不填则用默认名" autocomplete="off" />
+      <button id="name-modal-btn">进入游戏</button>
+      <div class="modal-tip">直接点"进入游戏"会使用默认名</div>
+    </div>
+  </div>
+
+  <!-- ============ 落地页：创建 / 加入房间 ============ -->
+  <div id="landing-screen" class="hidden">
+    <h2>开一局，或加入下面的房间</h2>
+    <button id="create-room-btn" class="big-btn">＋ 创建房间</button>
+
+    <div class="landing-section-title">房间列表（点击加入）</div>
+    <div id="room-list"></div>
+
+    <div class="landing-or">— 或输入房间号 —</div>
+    <div class="join-row">
+      <input id="join-code-input" maxlength="4" placeholder="4 位房间号" autocomplete="off" />
+      <button id="join-room-btn">加入</button>
+    </div>
+    <div id="join-error" class="join-error"></div>
+  </div>
+
+  <!-- ============ 大厅界面 ============ -->
+  <div id="lobby-screen" class="hidden">
+    <div id="room-code-bar">
+      <span class="room-code-label">房间号</span>
+      <b id="room-code">----</b>
+      <span class="room-code-tip">把它发给朋友即可一起玩</span>
+      <button id="leave-room-btn">离开房间</button>
+    </div>
+    <h2>联机大厅</h2>
+
+    <div class="lobby-row">
+      <span class="setup-label">我的队伍：</span>
+      <span class="btn-group" id="team-group">
+        <button data-team="green">绿队</button>
+        <button data-team="red">红队</button>
+      </span>
+    </div>
+
+    <div id="players-box"></div>
+    <div id="host-settings"></div>
+    <div id="wait-note" class="hidden"></div>
+  </div>
+
+  <!-- ============ 战场 + 左右面板（开局前隐藏） ============ -->
+  <div class="arena hidden">
+    <!-- 左侧一列：击杀榜（实时排名）+ 其下方击杀动态（kill feed） -->
+    <div class="arena-left">
+      <div id="kill-panel">
+        <h2>击杀榜</h2>
+        <div id="kill-list"></div>
+      </div>
+      <div id="kill-feed"></div>
+    </div>
+
+    <canvas id="game" width="1040" height="700"></canvas>
+
+    <div id="status-panel">
+      <button id="leave-btn" class="hidden">⟵ 返回大厅（房主）</button>
+      <button id="leave-room-arena-btn" class="hidden">⟵ 退出房间</button>
+      <h2>比分</h2>
+      <div class="score-row">
+        <span class="dot" id="dot-score-mine"></span><span class="name" id="label-score-mine">你方</span>
+        <span class="score" id="score-mine">0</span>
+      </div>
+      <div class="score-row">
+        <span class="dot" id="dot-score-enemy"></span><span class="name" id="label-score-enemy">敌方</span>
+        <span class="score" id="score-enemy">0</span>
+      </div>
+
+      <h2>存活人数</h2>
+      <div class="status-row">
+        <span class="dot" id="dot-alive-mine"></span><span class="name" id="label-alive-mine">你方</span>
+        <span class="state alive" id="alive-mine">0/0</span>
+      </div>
+      <div class="status-row">
+        <span class="dot" id="dot-alive-enemy"></span><span class="name" id="label-alive-enemy">敌方</span>
+        <span class="state alive" id="alive-enemy">0/0</span>
+      </div>
+
+      <h2>你</h2>
+      <div class="status-row">
+        <span class="name">状态</span><span class="state alive" id="status-me">—</span>
+      </div>
+      <div class="status-row">
+        <span class="name">手雷</span><span class="nade" id="nade-me">—</span>
+      </div>
+      <div class="status-row">
+        <span class="name">武器</span><span class="weapon" id="weapon-me">—</span>
+      </div>
+
+      <div id="gameover" class="hidden">
+        <div id="gameover-text"></div>
+        <div id="gameover-mvp"></div>
+        <div id="gameover-board"></div>
+        <button id="restart-btn">再来一局</button>
+        <button id="mapselect-btn">回大厅</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 联机版脚本：sound → net → input → render → main。客户端不再加载 world.js（逻辑在服务器） -->
+  <script src="js/sound.js"></script>
+  <script src="js/decode.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/touch.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

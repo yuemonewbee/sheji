@@ -1,0 +1,16 @@
+{
+  "name": "sheji",
+  "version": "1.0.0",
+  "description": "网页2D多人射击小游戏",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "ws": "^8.21.0"
+  }
+}
