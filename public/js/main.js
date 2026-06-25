@@ -373,18 +373,21 @@ document.getElementById('leave-btn').addEventListener('click', function() { netT
 //  服务器仍是权威，每帧把预测位置轻轻拉回服务器位置（校正）。
 // ============================================================
 const prediction = { x: 0, y: 0, angle: 0, active: false };
-const MOVE_SPEED = 90;       // 像素/秒 = 服务器每tick速度(3) × 30tick
-const FIGHTER_RADIUS = 16;
+// 移动速度/单位半径由服务器随 config 下发，避免写死与服务器不一致导致预测错位。
+// 取不到时用默认值兜底（旧值：speed 3 × 30tick = 90 像素/秒，半径 16）。
+function moveSpeed() { return (net.config && net.config.moveSpeed) || 90; }
+function fighterRadius() { return (net.config && net.config.fighterRadius) || 16; }
 
 // 客户端用的墙体碰撞（和服务器同款"圆 vs 矩形"）
 function predHitsWall(x, y) {
   const cfg = net.config;
   if (!cfg) return false;
+  const r = fighterRadius();
   for (const w of cfg.walls) {
     const cx = Math.max(w.x, Math.min(x, w.x + w.w));
     const cy = Math.max(w.y, Math.min(y, w.y + w.h));
     const dx = x - cx, dy = y - cy;
-    if (dx * dx + dy * dy < FIGHTER_RADIUS * FIGHTER_RADIUS) return true;
+    if (dx * dx + dy * dy < r * r) return true;
   }
   return false;
 }
@@ -416,16 +419,17 @@ function updatePrediction(dt, frozen) {
   }
 
   // 本地按输入移动（按真实 dt，速度和服务器一致）
+  const spd = moveSpeed(), r = fighterRadius();
   let vx = 0, vy = 0;
-  if (input.right) vx += MOVE_SPEED;
-  if (input.left) vx -= MOVE_SPEED;
-  if (input.down) vy += MOVE_SPEED;
-  if (input.up) vy -= MOVE_SPEED;
+  if (input.right) vx += spd;
+  if (input.left) vx -= spd;
+  if (input.down) vy += spd;
+  if (input.up) vy -= spd;
 
   const nx = prediction.x + vx * dt;
-  if (!predHitsWall(nx, prediction.y)) prediction.x = Math.max(FIGHTER_RADIUS, Math.min(cfg.width - FIGHTER_RADIUS, nx));
+  if (!predHitsWall(nx, prediction.y)) prediction.x = Math.max(r, Math.min(cfg.width - r, nx));
   const ny = prediction.y + vy * dt;
-  if (!predHitsWall(prediction.x, ny)) prediction.y = Math.max(FIGHTER_RADIUS, Math.min(cfg.height - FIGHTER_RADIUS, ny));
+  if (!predHitsWall(prediction.x, ny)) prediction.y = Math.max(r, Math.min(cfg.height - r, ny));
 
   prediction.angle = Math.atan2(input.aimY - prediction.y, input.aimX - prediction.x);
 }

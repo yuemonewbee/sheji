@@ -127,6 +127,10 @@ const MAX_HP = 100;
 const BULLET_DAMAGE = 25;
 const BULLET_SPEED = 9;
 const BULLET_RADIUS = 4;
+// 单位移动参数（客户端预测要用同一套，故由服务器随 config 下发，避免写死导致预测错位）
+const FIGHTER_RADIUS = 16;
+const FIGHTER_SPEED = 3;   // 每 tick 移动像素
+const TICK_RATE = 30;      // 模拟频率（次/秒）
 const FIRE_COOLDOWN = 12;
 const RESPAWN_TIME = 180;
 const SPAWN_PROTECT = 45; // 出生/复活后的无敌帧数（约 1.5 秒），开火即解除
@@ -213,7 +217,7 @@ function createFighter(id, x, y, team, controller, name) {
   return {
     id: id, team: team, controller: controller, name: name || '',
     color: fighterColor(team, controller),
-    x: x, y: y, radius: 16, angle: 0, speed: 3,
+    x: x, y: y, radius: FIGHTER_RADIUS, angle: 0, speed: FIGHTER_SPEED,
     hp: MAX_HP, maxHp: MAX_HP, alive: true,
     respawnTimer: 0, fireCooldown: 0, strafeDir: 1,
     grenadeCooldown: 0, grenades: START_GRENADES,
@@ -1447,6 +1451,8 @@ function mapConfig(world) {
     mapName: world.mapName, teamGreen: world.teamGreen, teamRed: world.teamRed,
     bulletRadius: BULLET_RADIUS, crateHalf: CRATE_HALF, heartHalf: HEART_HALF, explosionRadius: EXPLOSION_RADIUS,
     weaponHalf: WEAPON_HALF,
+    // 单位移动参数（客户端预测用，避免写死与服务器不一致）：
+    fighterRadius: FIGHTER_RADIUS, moveSpeed: FIGHTER_SPEED * TICK_RATE, // moveSpeed = 像素/秒
     targetScore: world.targetScore,
     mode: world.mode, ladderLen: GUNGAME_LADDER.length, // 游戏模式 + 军备梯长度（客户端显示进度）
     zone: world.zone || null, // 占点圈（仅 koth）
