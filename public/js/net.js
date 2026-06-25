@@ -148,10 +148,40 @@ function handleMessage(msg) {
 // 收到一张（已还原好的）快照：存入插值缓冲、刷新 net.state、触发音效。
 // 二进制路径和 JSON 兜底路径都汇到这里。
 function ingestSnapshot(snap) {
+  // 给每颗子弹算"飞行方向"（拖尾用）：和上一张快照的子弹做最近邻匹配，位置差即方向。
+  // 只在新快照到达时算一次（~15次/秒），不在渲染帧里算，开销极低、零带宽（不需要服务器发速度）。
+  computeBulletDirs(snap, net.state);
   net.state = snap;
   net.snapshots.push({ t: performance.now(), snap: snap });
   if (net.snapshots.length > 6) net.snapshots.shift();
   handleSoundEvents(snap);
+}
+
+// 把当前帧子弹与上一帧子弹按最近邻配对，估出每颗子弹的单位方向向量 {dx,dy}，存到 b.dirx/b.diry。
+// 匹配半径 MAXSTEP：子弹最快约 18px/tick × 2tick(15Hz) ≈ 36，留余量取 60。
+function computeBulletDirs(snap, prev) {
+  const cur = snap && snap.bullets;
+  if (!cur || !cur.length) return;
+  const old = prev && prev.bullets;
+  const MAXSTEP2 = 60 * 60;
+  for (const b of cur) {
+    b.dirx = 0; b.diry = 0;
+    if (!old || !old.length) continue;
+    // 找上一帧里同色、最近的子弹（同武器+同队，减少误配）
+    let best = null, bestD = MAXSTEP2;
+    for (const o of old) {
+      if (o.team !== b.team) continue;
+      const dx = b.x - o.x, dy = b.y - o.y;
+      const d = dx * dx + dy * dy;
+      // 子弹是往前飞的，位移要 >0 且在合理范围
+      if (d > 4 && d < bestD) { bestD = d; best = o; }
+    }
+    if (best) {
+      const dx = b.x - best.x, dy = b.y - best.y;
+      const len = Math.hypot(dx, dy) || 1;
+      b.dirx = dx / len; b.diry = dy / len;
+    }
+  }
 }
 
 // ---------- 插值：返回"补间后的画面" ----------

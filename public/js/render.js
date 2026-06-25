@@ -82,6 +82,22 @@ function drawFrame(ctx) {
       color = isSniper ? '#7fd0ff' : '#7fe0c0';       // 浅蓝(狙) / 青绿(普通)
       r = isSniper ? cfg.bulletRadius + 2 : cfg.bulletRadius;
     }
+    // 拖尾：沿飞行反方向画一条渐变淡线，把"一跳一跳"补成"飞行"，并显出弹道方向。
+    // 长度固定（不需服务器发速度=零带宽）；狙击弹更长更亮（突出威胁），其余短而淡。
+    if (b.dirx || b.diry) {
+      const tlen = isSniper ? 30 : 13; // 拖尾长度（像素）
+      const tx = b.x - b.dirx * tlen, ty = b.y - b.diry * tlen;
+      const grad = ctx.createLinearGradient(b.x, b.y, tx, ty);
+      grad.addColorStop(0, color);
+      grad.addColorStop(1, 'rgba(0,0,0,0)'); // 尾端淡出
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = isSniper ? r * 1.4 : r * 1.1;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
     // 威胁最大的敌方狙击弹加一圈光晕
     if (isEnemy && isSniper) {
       ctx.beginPath();
