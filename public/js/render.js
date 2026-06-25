@@ -39,12 +39,25 @@ function spawnDamagePop(victimId, x, y, amount, kill) {
 }
 
 // 武器外观表（下标 = 服务器 WEAPONS 里的 idx）：名字 / 颜色 / 拾取物上的字
+// len=枪管长 width=枪管粗（俯视小战士手持武器时的形状，越强力越长/粗）
 const WEAPON_VIS = [
-  { name: '手枪',   color: '#ffffff', label: '' },   // 0 手枪
-  { name: '冲锋枪', color: '#7fb3ff', label: '冲' }, // 1 冲锋枪
-  { name: '霰弹枪', color: '#ff9f43', label: '霰' }, // 2 霰弹枪
-  { name: '狙击枪', color: '#c56cff', label: '狙' }, // 3 狙击枪
+  { name: '手枪',   color: '#ffffff', label: '',   len: 14, width: 3 }, // 0 手枪
+  { name: '冲锋枪', color: '#7fb3ff', label: '冲', len: 20, width: 4 }, // 1 冲锋枪
+  { name: '霰弹枪', color: '#ff9f43', label: '霰', len: 18, width: 6 }, // 2 霰弹枪
+  { name: '狙击枪', color: '#c56cff', label: '狙', len: 30, width: 4 }, // 3 狙击枪
 ];
+
+// 移动检测：记上一帧位置，算位移判断是否在走（驱动腿部摆动 + 走路相位）
+const fighterMotion = {}; // id -> { px, py, phase, moving }
+function updateMotion(id, x, y) {
+  let m = fighterMotion[id];
+  if (!m) { m = fighterMotion[id] = { px: x, py: y, phase: 0, moving: false }; }
+  const d = Math.hypot(x - m.px, y - m.py);
+  m.moving = d > 0.4;            // 这帧有明显位移就算在走
+  if (m.moving) m.phase += d * 0.16; // 走得越快腿摆得越快
+  m.px = x; m.py = y;
+  return m;
+}
 
 // 画一帧。读取 net.config / net.state / net.yourFighterId。
 function drawFrame(ctx) {
@@ -318,15 +331,51 @@ function drawFighter(ctx, f) {
     fx = prediction.x; fy = prediction.y; fang = prediction.angle;
   }
 
-  // 出生保护：身体闪烁（半透明脉动）+ 一圈青色护盾环
+  // 移动状态（驱动腿部摆动）
+  const mot = updateMotion(f.id, fx, fy);
+
+  // 出生保护：整体闪烁（半透明脉动）
   const protect = f.inv ? (0.45 + 0.4 * Math.sin(performance.now() / 70)) : 1;
+
+  // ---- 俯视小战士：旋转到朝向后画 躯干/腿/手臂/武器 ----
+  const vis = WEAPON_VIS[f.w] || WEAPON_VIS[0];
   ctx.save();
   ctx.globalAlpha = protect;
+  ctx.translate(fx, fy);
+  ctx.rotate(fang); // 之后 +x 为朝向正前方
+
+  // 腿（两条，位于身体两侧偏后；移动时前后交替摆动）
+  const swing = mot.moving ? Math.sin(mot.phase) * 4 : 0;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-4, -9); ctx.lineTo(-4 + swing, -13); ctx.stroke();      // 左腿
+  ctx.beginPath(); ctx.moveTo(-4, 9);  ctx.lineTo(-4 - swing, 13);  ctx.stroke();      // 右腿
+
+  // 武器（沿正前方，长度/粗细随武器；颜色随武器）+ 两只手握持
+  ctx.strokeStyle = vis.color;
+  ctx.lineWidth = vis.width;
+  ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(6 + vis.len, 0); ctx.stroke();
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(9, -4, 2.5, 0, Math.PI * 2); ctx.fill();  // 前手
+  ctx.beginPath(); ctx.arc(9, 4, 2.5, 0, Math.PI * 2); ctx.fill();   // 后手
+
+  // 躯干（圆身 + 深色描边）
   ctx.beginPath();
-  ctx.arc(fx, fy, 16, 0, Math.PI * 2);
+  ctx.arc(0, 0, 14, 0, Math.PI * 2);
   ctx.fillStyle = f.color;
   ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.stroke();
+
+  // 朝前的"头/护目镜"小三角，强化朝向辨识
+  ctx.beginPath();
+  ctx.moveTo(14, -5); ctx.lineTo(20, 0); ctx.lineTo(14, 5); ctx.closePath();
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fill();
   ctx.restore();
+
   if (f.inv) {
     ctx.beginPath();
     ctx.arc(fx, fy, 21, 0, Math.PI * 2);
@@ -335,9 +384,8 @@ function drawFighter(ctx, f) {
     ctx.stroke();
   }
 
-  // 人类玩家加一圈光环，一眼区分人/电脑（队伍色仍是填充色，用来分敌我）：
-  //   你自己 = 白环；其他真人 = 蓝环；电脑 = 无环
-  if (isMe || f.controller === 'human') {
+  // 其他真人玩家加一圈蓝色光环（电脑无环）。自己不再用光环，改用头顶箭头（见下方），更清爽。
+  if (!isMe && f.controller === 'human') {
     ctx.beginPath();
     ctx.arc(fx, fy, 19, 0, Math.PI * 2);
     // 先描一圈深色衬底，保证在任何底色上都看得清
@@ -346,21 +394,31 @@ function drawFighter(ctx, f) {
     ctx.stroke();
     ctx.beginPath();
     ctx.arc(fx, fy, 19, 0, Math.PI * 2);
-    ctx.strokeStyle = isMe ? '#ffffff' : '#4fc3ff';
+    ctx.strokeStyle = '#4fc3ff';
     ctx.lineWidth = 3;
     ctx.stroke();
   }
 
+  // 自己：头顶一个上下跳动的向下箭头 ▼，一眼锁定"这是你"（不和身体的环/三角打架）
+  if (isMe) {
+    const bob = Math.sin(performance.now() / 220) * 3; // 轻微上下浮动
+    const ay = fy - 50 + bob; // 在名字(-32)/血条(-28)上方，避免重叠
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(fx - 7, ay);
+    ctx.lineTo(fx + 7, ay);
+    ctx.lineTo(fx, ay + 9);
+    ctx.closePath();
+    ctx.fillStyle = '#ffd54a';
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // 连杀中的单位头顶燃烧火焰（streak>=2 才有；等级越高火越大）
   if (f.streak >= 2) drawHeadFire(ctx, fx, fy - 22, f.streak);
-
-  // 枪口（颜色随当前武器，手枪为白）
-  ctx.beginPath();
-  ctx.moveTo(fx, fy);
-  ctx.lineTo(fx + Math.cos(fang) * 30, fy + Math.sin(fang) * 30);
-  ctx.strokeStyle = (WEAPON_VIS[f.w] || WEAPON_VIS[0]).color;
-  ctx.lineWidth = 4;
-  ctx.stroke();
 
   // 血条
   const barW = 36, barH = 5;
@@ -370,13 +428,21 @@ function drawFighter(ctx, f) {
   ctx.fillStyle = '#5fd35f';
   ctx.fillRect(x, y, barW * Math.max(0, f.hp / f.maxHp), barH);
 
-  // 名字（真人才显示）
+  // 名字（真人才显示）：自己用亮黄加粗 + 描边，别人白色
   if (f.name) {
-    ctx.fillStyle = '#fff';
-    ctx.font = '12px sans-serif';
+    ctx.save();
     ctx.textAlign = 'center';
+    if (isMe) {
+      ctx.font = 'bold 12px sans-serif';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+      ctx.strokeText(f.name, fx, fy - 32);
+      ctx.fillStyle = '#ffd54a';
+    } else {
+      ctx.font = '12px sans-serif';
+      ctx.fillStyle = '#fff';
+    }
     ctx.fillText(f.name, fx, fy - 32);
-    ctx.textAlign = 'left';
+    ctx.restore();
   }
 }
 
