@@ -9,6 +9,41 @@ const SFX = {
   master: null,
   noiseBuf: null,
   enabled: true,
+  // 用户音量系数（0~1），存 localStorage 下次记住。音效在 master、音乐在 musicGain 上生效。
+  sfxVol: 1,
+  musVol: 1,
+  MASTER_BASE: 0.95, // 音效总音量基准（用户系数在此基础上再乘）
+
+  // 启动时读回上次保存的音量
+  loadVolumes() {
+    try {
+      const s = localStorage.getItem('sfxVol'); if (s != null) this.sfxVol = Math.max(0, Math.min(1, parseFloat(s)));
+      const m = localStorage.getItem('musVol'); if (m != null) this.musVol = Math.max(0, Math.min(1, parseFloat(m)));
+    } catch (e) {}
+  },
+  setSfxVol(v) {
+    this.sfxVol = Math.max(0, Math.min(1, v));
+    try { localStorage.setItem('sfxVol', this.sfxVol); } catch (e) {}
+    if (this.master) this.master.gain.value = this.MASTER_BASE * this.sfxVol;
+  },
+  setMusVol(v) {
+    this.musVol = Math.max(0, Math.min(1, v));
+    try { localStorage.setItem('musVol', this.musVol); } catch (e) {}
+    // 正在播放就实时把音乐音量拉到新值（淡变 0.3s）
+    if (this.musicGain && this.ctx && this._MUSIC && this._MUSIC.playing) {
+      const now = this.ctx.currentTime;
+      const target = Math.max(0.0001, this._musicTargetVol());
+      this.musicGain.gain.cancelScheduledValues(now);
+      this.musicGain.gain.setValueAtTime(Math.max(0.0001, this.musicGain.gain.value), now);
+      this.musicGain.gain.exponentialRampToValueAtTime(target, now + 0.3);
+    }
+  },
+  // 当前情绪下音乐应有的目标音量（含用户系数）
+  _musicTargetVol() {
+    const M = this._MUSIC;
+    const cfg = (M && M.moods[M.mood]) || (M && M.moods.battle);
+    return this.MUSIC_VOL * (cfg ? cfg.volMul : 1) * this.musVol;
+  },
 
   // 首次用户交互时调用，创建/恢复音频环境
   unlock() {
@@ -27,8 +62,9 @@ const SFX = {
       this.comp.connect(this.ctx.destination);
 
       // 音效总音量（整体放大了）。链路：各音效 → master → 限幅器 → 输出
+      this.loadVolumes(); // 读回上次保存的音量系数
       this.master = this.ctx.createGain();
-      this.master.gain.value = 0.95;
+      this.master.gain.value = this.MASTER_BASE * this.sfxVol;
       this.master.connect(this.comp);
 
       // 背景音乐走单独一条链路：各乐音 → musicGain → 限幅器 → 输出。
@@ -329,7 +365,7 @@ const SFX = {
     M.bpm = cfg.bpm;
     M.prog = cfg.prog;
     M.kick = cfg.kick;
-    const targetVol = this.MUSIC_VOL * cfg.volMul;
+    const targetVol = Math.max(0.0001, this.MUSIC_VOL * cfg.volMul * this.musVol); // 含用户系数
     const now = this.ctx.currentTime;
 
     if (M.playing) {

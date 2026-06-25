@@ -117,6 +117,32 @@ document.getElementById('mute-btn').addEventListener('click', function() {
     SFX.stopMusic();
   }
 });
+
+// ---------- 音量面板：音乐 / 音效 两个独立滑块（值存 localStorage） ----------
+(function() {
+  const volBtn = document.getElementById('vol-btn');
+  const panel = document.getElementById('vol-panel');
+  const musSlider = document.getElementById('vol-music');
+  const sfxSlider = document.getElementById('vol-sfx');
+  SFX.loadVolumes(); // 先读回保存值，初始化滑块位置
+  musSlider.value = Math.round(SFX.musVol * 100);
+  sfxSlider.value = Math.round(SFX.sfxVol * 100);
+
+  volBtn.addEventListener('click', function() { panel.classList.toggle('hidden'); });
+  musSlider.addEventListener('input', function() { SFX.unlock(); SFX.setMusVol(this.value / 100); });
+  sfxSlider.addEventListener('input', function() {
+    SFX.unlock();
+    SFX.setSfxVol(this.value / 100);
+    // 拖音效滑块时给个即时反馈音（拾取音清脆短促）
+    if (SFX.enabled) SFX.pickup();
+  });
+  // 点面板外区域收起
+  document.addEventListener('click', function(e) {
+    if (!panel.classList.contains('hidden') && !document.getElementById('audio-ctl').contains(e.target)) {
+      panel.classList.add('hidden');
+    }
+  });
+})();
 document.getElementById('name-modal-btn').addEventListener('click', submitNameModal);
 document.getElementById('name-modal-input').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') submitNameModal();

@@ -7,7 +7,14 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <button id="mute-btn" title="音效开关">🔊</button>
+  <div id="audio-ctl">
+    <button id="mute-btn" title="静音开关">🔊</button>
+    <button id="vol-btn" title="音量调节（点击展开/收起音乐·音效滑块）">🎵</button>
+    <div id="vol-panel" class="hidden">
+      <label>音乐 <input id="vol-music" type="range" min="0" max="100" value="100"></label>
+      <label>音效 <input id="vol-sfx" type="range" min="0" max="100" value="100"></label>
+    </div>
+  </div>
   <h1>2D 射击 · 联机对战</h1>
   <p class="hint"><b>WASD</b> 移动，鼠标瞄准，<b>左键开枪</b>，<b>右键扔手雷</b>（捡黄箱补雷）。捡地上的<b>彩色武器</b>换枪，弹药用尽自动换回手枪。</p>
 

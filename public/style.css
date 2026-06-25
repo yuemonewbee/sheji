@@ -532,7 +532,7 @@ h1 {
 }
 
 /* 触屏设备上把静音按钮抬到触屏层之上，保证可点 */
-body.touch #mute-btn { z-index: 320; }
+body.touch #audio-ctl { z-index: 320; }
 
 /* ============ 落地页：创建 / 加入房间 ============ */
 #landing-screen {
@@ -695,12 +695,17 @@ body.touch #mute-btn { z-index: 320; }
   100% { opacity: 1; transform: scale(1); }
 }
 
-/* 静音开关（右上角） */
-#mute-btn {
+/* 音频控制（右上角）：静音按钮 + 音量按钮 + 滑块面板 */
+#audio-ctl {
   position: fixed;
   top: 12px;
   right: 14px;
   z-index: 60;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+#mute-btn, #vol-btn {
   width: 40px;
   height: 40px;
   font-size: 18px;
@@ -709,7 +714,31 @@ body.touch #mute-btn { z-index: 320; }
   border-radius: 8px;
   cursor: pointer;
 }
-#mute-btn:hover { border-color: #888; }
+#mute-btn:hover, #vol-btn:hover { border-color: #888; }
+#vol-panel {
+  position: absolute;
+  top: 0;
+  right: 92px;        /* 向左展开到两个按钮的左侧，避免向下盖住右侧"返回大厅" */
+  background: #2b2b3a;
+  border: 2px solid #555;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#vol-panel label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #ccd;
+  white-space: nowrap;
+}
+#vol-panel input[type=range] { width: 120px; cursor: pointer; }
+/* 关键：ID 选择器的 display:flex 优先级高于 .hidden，必须用同等优先级的规则盖掉，
+   否则 toggle('hidden') 无效——面板会一直显示、点按钮看似"没反应"。 */
+#vol-panel.hidden { display: none; }
 
 /* ================= 左侧个人击杀榜 ================= */
 #kill-panel {

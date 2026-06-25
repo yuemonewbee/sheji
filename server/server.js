@@ -60,6 +60,13 @@ const sessions = new Map();// token -> { pid, name, team, roomCode }，用于刷
 const GRACE_MS = 45000;    // 房间因掉线变空后保留多久，等原玩家重连回来
 let nextId = 1;
 
+// ---------- 安全护栏：限流 + 人数上限（外网开放前的防刷/防拖垮） ----------
+const MAX_CONNECTIONS = 200;  // 全服同时连接数上限
+const MAX_ROOM_PLAYERS = 12;  // 单房间最大人数（够 6v6）
+const MSG_WINDOW_MS = 1000;   // 限流时间窗口
+const MSG_PER_WINDOW = 60;    // 每窗口最多处理多少条消息（输入约 30/s，留一倍余量）
+let connCount = 0;            // 当前连接数
+
 // 记录/更新某 ws 的会话（用它的持久 token 作键）
 function saveSession(ws, room, client) {
   if (!ws._token) return;
@@ -220,6 +227,11 @@ function joinFlow(ws, code, name) {
     code = String(code).trim().toUpperCase();
     room = rooms.get(code);
     if (!room) { sendTo(ws, { type: 'joinError', reason: '房间号不存在：' + code }); return; }
+    // 护栏③：房间满员禁入（防单房间被挤爆）
+    if (room.clients.size >= MAX_ROOM_PLAYERS) {
+      sendTo(ws, { type: 'joinError', reason: '房间已满（' + MAX_ROOM_PLAYERS + ' 人）' });
+      return;
+    }
   }
 
   if (room.emptyTimer) { clearTimeout(room.emptyTimer); room.emptyTimer = null; } // 有人进来，取消空房销毁
@@ -387,17 +399,33 @@ const wss = new WebSocket.Server({
 });
 
 wss.on('connection', (ws) => {
+  // 护栏①：全服连接数上限，满了直接拒绝（防被大量连接拖垮）
+  if (connCount >= MAX_CONNECTIONS) {
+    sendTo(ws, { type: 'joinError', reason: '服务器繁忙，请稍后再试' });
+    ws.close();
+    return;
+  }
+  connCount++;
   ws._pid = 'p' + (nextId++);                  // 全局唯一玩家 id（跨房间）
+  ws._msgTimes = [];                           // 限流用：最近消息时间戳
   sendTo(ws, { type: 'welcome', youId: ws._pid }); // 此时还没进任何房间，客户端去落地页创建/加入
   sendRoomList(ws);                            // 落地页立刻看到当前房间列表
 
   ws.on('message', (raw) => {
+    // 护栏②：消息限流——超频的消息直接丢弃，不当作错误（输入丢一两帧无所谓）
+    const now = Date.now();
+    const times = ws._msgTimes;
+    while (times.length && times[0] <= now - MSG_WINDOW_MS) times.shift();
+    if (times.length >= MSG_PER_WINDOW) return; // 超频，丢弃
+    times.push(now);
+    // 单条消息体积也限一下（防超大 payload）
+    if (raw.length > 4096) return;
     let msg;
     try { msg = JSON.parse(raw); } catch (e) { return; }
     handleMessage(ws, msg);
   });
 
-  ws.on('close', () => { removeFromRoom(ws, true); }); // 掉线：保留会话，给重连机会
+  ws.on('close', () => { connCount = Math.max(0, connCount - 1); removeFromRoom(ws, true); }); // 掉线：保留会话，给重连机会
 });
 
 function handleMessage(ws, msg) {
