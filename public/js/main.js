@@ -214,7 +214,7 @@ function renderLobby(msg) {
 }
 
 let mapScrollLeft = 0; // 记住地图轮播的横向滚动位置（大厅每次更新都会重建 DOM）
-const MODE_NAMES = { tdm: '团队死斗', gungame: '军备竞赛', koth: '占点', ctf: '夺旗' };
+const MODE_NAMES = { tdm: '团队死斗', gungame: '军备竞赛', koth: '占点', ctf: '夺旗', lastman: '最后存活' };
 
 // 按地图面积给一个尺寸档 + 推荐人数角标
 function mapSizeTier(w, h) {
@@ -232,7 +232,7 @@ function renderHostSettings(hostBox, msg) {
   modeRow.innerHTML = '<span class="setup-label">模式：</span>';
   const modeGroup = document.createElement('span');
   modeGroup.className = 'btn-group';
-  ['tdm', 'gungame', 'koth', 'ctf'].forEach(function(mode) {
+  ['tdm', 'gungame', 'koth', 'ctf', 'lastman'].forEach(function(mode) {
     const btn = document.createElement('button');
     btn.textContent = MODE_NAMES[mode];
     if ((msg.settings.mode || 'tdm') === mode) btn.classList.add('sel');

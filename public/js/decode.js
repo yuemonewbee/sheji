@@ -28,6 +28,10 @@
     var winCode = u8();
     var winner = winCode === 1 ? 'green' : (winCode === 2 ? 'red' : null);
     var countdown = u8();
+    var roundByte = u8();
+    var roundOver = (roundByte & 1) ? 1 : 0;
+    var rwCode = (roundByte >> 1) & 3;
+    var roundWinner = rwCode === 1 ? 'green' : (rwCode === 2 ? 'red' : (rwCode === 3 ? 'draw' : null));
     var greenScore = u16();
     var redScore = u16();
 
@@ -121,6 +125,7 @@
       events: events,
       teamScore: { green: greenScore, red: redScore },
       gameOver: gameOver, winner: winner, countdown: countdown,
+      roundOver: roundOver, roundWinner: roundWinner,
     };
   }
 

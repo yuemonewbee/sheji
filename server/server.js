@@ -483,7 +483,7 @@ function handleMessage(ws, msg) {
         if (Number.isInteger(msg.mapIndex)) room.settings.mapIndex = msg.mapIndex;
         if (Number.isInteger(msg.teamGreen)) room.settings.teamGreen = Math.max(1, Math.min(6, msg.teamGreen));
         if (Number.isInteger(msg.teamRed)) room.settings.teamRed = Math.max(1, Math.min(6, msg.teamRed));
-        if (['tdm', 'gungame', 'koth', 'ctf'].indexOf(msg.mode) >= 0) room.settings.mode = msg.mode;
+        if (['tdm', 'gungame', 'koth', 'ctf', 'lastman'].indexOf(msg.mode) >= 0) room.settings.mode = msg.mode;
         if (['any', 'small', 'medium', 'large'].indexOf(msg.randomSize) >= 0) room.settings.randomSize = msg.randomSize;
         sendLobby(room);
         broadcastRoomList(); // 人数上限变了，更新落地页列表

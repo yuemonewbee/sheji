@@ -213,6 +213,32 @@ function drawFrame(ctx) {
     else if (now < goFlashUntil) drawBigCenterText(ctx, cfg, 'GO!', '#5fd35f');
   }
 
+  // 7.9) 最后存活：回合结算展示（半透明遮罩 + 本回合赢家）
+  if (st.roundOver && !st.gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, cfg.width, cfg.height);
+    let txt, col;
+    if (st.roundWinner === 'draw') { txt = '本回合平局'; col = '#ddd'; }
+    else if (st.roundWinner) {
+      const myTeam = myTeamOf(st);
+      if (!myTeam) { txt = (st.roundWinner === 'green' ? '绿队' : '红队') + ' 赢得本回合'; col = st.roundWinner === 'green' ? '#5fd35f' : '#ff6b6b'; }
+      else { txt = (st.roundWinner === myTeam) ? '🏆 你方赢得本回合' : '本回合落败'; col = (st.roundWinner === myTeam) ? '#5fd35f' : '#ff6b6b'; }
+    }
+    if (txt) {
+      ctx.save();
+      ctx.textAlign = 'center'; ctx.font = 'bold 40px sans-serif';
+      ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.strokeText(txt, cfg.width / 2, cfg.height / 2 - 16);
+      ctx.fillStyle = col; ctx.fillText(txt, cfg.width / 2, cfg.height / 2 - 16);
+      // 当前回合比分
+      ctx.font = 'bold 22px sans-serif';
+      const sc = '回合比分  绿 ' + st.teamScore.green + ' : ' + st.teamScore.red + ' 红';
+      ctx.strokeText(sc, cfg.width / 2, cfg.height / 2 + 28);
+      ctx.fillStyle = '#fff'; ctx.fillText(sc, cfg.width / 2, cfg.height / 2 + 28);
+      ctx.restore();
+    }
+  }
+
   // 8) 胜负遮罩
   if (st.gameOver) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -477,8 +503,10 @@ function updateHud() {
   const statusEl = document.getElementById('status-me');
   const nadeEl = document.getElementById('nade-me');
   const weaponEl = document.getElementById('weapon-me');
+  const isLastman = net.config && net.config.mode === 'lastman';
   if (me) {
     if (me.alive) { statusEl.textContent = '存活'; statusEl.className = 'state alive'; }
+    else if (isLastman) { statusEl.textContent = '阵亡（观战本回合）'; statusEl.className = 'state dead'; }
     else { statusEl.textContent = '复活中 ' + Math.ceil(me.respawnTimer / 60) + 's'; statusEl.className = 'state dead'; }
     nadeEl.textContent = isGun ? '—' : me.grenades; // 军备竞赛无手雷
     // 武器：军备竞赛显示当前枪 + 进度；其它显示弹药

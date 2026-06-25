@@ -215,6 +215,8 @@ function netGetView() {
     gameOver: latest.gameOver,
     winner: latest.winner,
     countdown: latest.countdown,
+    roundOver: latest.roundOver,
+    roundWinner: latest.roundWinner,
   };
 }
 
