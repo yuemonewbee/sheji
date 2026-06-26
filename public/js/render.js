@@ -38,6 +38,82 @@ function spawnDamagePop(victimId, x, y, amount, kill) {
   dmgPops.push({ victim: victimId, x: x, y0: y, amount: amount, t0: performance.now(), ttl: kill ? 1100 : 750, kill: kill });
 }
 
+// ---------- 打击特效：枪口火光 + 命中火花（纯客户端，由事件触发，每帧衰减） ----------
+const muzzles = [];   // 枪口火光：{x,y,ang,t0,ttl,color,size}
+const sparks = [];    // 命中火花粒子：{x,y,vx,vy,t0,ttl,color,size}
+const MAX_SPARKS = 400; // 上限，防爆量（爆炸/死亡碎屑较多，留足余量；都是小圆，开销可忽略）
+
+// 在 (x,y) 朝 ang 方向闪一下枪口火光
+function spawnMuzzle(x, y, ang, color, size) {
+  muzzles.push({ x: x, y: y, ang: ang, t0: performance.now(), ttl: 90, color: color || '#ffe08a', size: size || 1 });
+  if (muzzles.length > 60) muzzles.shift();
+}
+// 在 (x,y) 溅一簇火花（n 颗，朝四周飞）。命中墙/人都可用
+function spawnSparks(x, y, n, color) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 0.6 + Math.random() * 2.2;
+    sparks.push({ x: x, y: y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      t0: performance.now(), ttl: 220 + Math.random() * 180, color: color || '#ffd060', size: 1 + Math.random() * 1.5 });
+  }
+  while (sparks.length > MAX_SPARKS) sparks.shift();
+}
+// 爆裂：更猛更大的一簇（爆炸碎屑 / 死亡爆裂）。speed/big 控制规模，colors 数组随机取色
+function spawnBurst(x, y, n, speed, big, colors) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = speed * (0.4 + Math.random());
+    sparks.push({ x: x, y: y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      t0: performance.now(), ttl: 350 + Math.random() * 350,
+      color: colors[(Math.random() * colors.length) | 0], size: big * (0.6 + Math.random() * 0.9) });
+  }
+  while (sparks.length > MAX_SPARKS) sparks.shift();
+}
+
+// 每帧绘制并衰减打击特效
+function drawHitFx(ctx) {
+  const now = performance.now();
+  // 枪口火光：一小簇向前的亮光，快速消失
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = muzzles.length - 1; i >= 0; i--) {
+    const m = muzzles[i];
+    const k = (now - m.t0) / m.ttl;
+    if (k >= 1) { muzzles.splice(i, 1); continue; }
+    const a = 1 - k;
+    const r = (5 + 6 * m.size) * (0.7 + 0.5 * (1 - k));
+    const gx = m.x + Math.cos(m.ang) * 4, gy = m.y + Math.sin(m.ang) * 4;
+    const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
+    grad.addColorStop(0, 'rgba(255,248,210,' + (0.95 * a) + ')');
+    grad.addColorStop(0.45, 'rgba(255,200,90,' + (0.6 * a) + ')');
+    grad.addColorStop(1, 'rgba(255,150,30,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(gx, gy, r, 0, Math.PI * 2); ctx.fill();
+    // 朝枪口方向的一小道尖光
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = 'rgba(255,240,180,' + (0.8 * a) + ')';
+    ctx.lineWidth = 2 + m.size;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(gx, gy);
+    ctx.lineTo(gx + Math.cos(m.ang) * (8 + 6 * m.size), gy + Math.sin(m.ang) * (8 + 6 * m.size));
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  // 命中火花：小亮点飞散 + 渐隐
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    const k = (now - s.t0) / s.ttl;
+    if (k >= 1) { sparks.splice(i, 1); continue; }
+    s.x += s.vx; s.y += s.vy;
+    s.vx *= 0.92; s.vy *= 0.92; // 阻尼
+    ctx.globalAlpha = 1 - k;
+    ctx.fillStyle = s.color;
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.size * (1 - k * 0.5), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
 // 武器外观表（下标 = 服务器 WEAPONS 里的 idx）：名字 / 颜色 / 拾取物上的字
 // len=枪管长 width=枪管粗（俯视小战士手持武器时的形状，越强力越长/粗）
 const WEAPON_VIS = [
@@ -184,15 +260,31 @@ function drawFrame(ctx) {
     }
   }
 
-  // 7) 爆炸特效
+  // 7) 爆炸特效：多层（冲击波环 + 橙火球 + 白热核心）
   for (const e of st.effects) {
-    const p = 1 - e.life / e.maxLife;
-    const radius = cfg.explosionRadius * (0.3 + 0.7 * p);
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,160,40,' + (0.55 * (1 - p)) + ')';
-    ctx.fill();
+    const p = 1 - e.life / e.maxLife;        // 0→1 进度
+    const R = cfg.explosionRadius;
+    ctx.save();
+    // 冲击波环：快速向外扩张、变细变淡
+    const ringR = R * (0.3 + 1.05 * p);
+    ctx.globalAlpha = Math.max(0, 1 - p) * 0.7;
+    ctx.lineWidth = Math.max(1, 7 * (1 - p));
+    ctx.strokeStyle = 'rgba(255,220,150,1)';
+    ctx.beginPath(); ctx.arc(e.x, e.y, ringR, 0, Math.PI * 2); ctx.stroke();
+    // 橙火球：扩张 + 渐隐（用发光叠加）
+    ctx.globalCompositeOperation = 'lighter';
+    const fireR = R * (0.28 + 0.62 * p);
+    const grad = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, fireR);
+    grad.addColorStop(0, 'rgba(255,245,210,' + (0.85 * (1 - p)) + ')');   // 白热核心
+    grad.addColorStop(0.4, 'rgba(255,170,50,' + (0.7 * (1 - p)) + ')');  // 橙火
+    grad.addColorStop(1, 'rgba(200,60,20,0)');                            // 红边淡出
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(e.x, e.y, fireR, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
+
+  // 7.3) 打击特效：枪口火光 + 命中火花
+  drawHitFx(ctx);
 
   // 7.4) 伤害飘字（只有你造成的伤害）：小字向上飘 + 淡出；击杀用更大的红字
   if (dmgPops.length) {

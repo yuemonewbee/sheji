@@ -151,10 +151,24 @@ function ingestSnapshot(snap) {
   // 给每颗子弹算"飞行方向"（拖尾用）：和上一张快照的子弹做最近邻匹配，位置差即方向。
   // 只在新快照到达时算一次（~15次/秒），不在渲染帧里算，开销极低、零带宽（不需要服务器发速度）。
   computeBulletDirs(snap, net.state);
+  detectNewExplosions(snap, net.state); // 新出现的爆炸 → 溅碎屑（零协议改动，从 effects 推断）
   net.state = snap;
   net.snapshots.push({ t: performance.now(), snap: snap });
   if (net.snapshots.length > 6) net.snapshots.shift();
   handleSoundEvents(snap);
+}
+
+// 比较前后两帧的爆炸特效，对"新出现的"爆炸在其位置溅一簇碎屑（不增协议、不改服务器）
+function detectNewExplosions(snap, prev) {
+  const cur = snap && snap.effects;
+  if (!cur || !cur.length || typeof spawnBurst !== 'function') return;
+  const old = (prev && prev.effects) || [];
+  for (const e of cur) {
+    // 新爆炸：上一帧附近没有同位置的爆炸
+    let isNew = true;
+    for (const o of old) { if (Math.abs(o.x - e.x) < 4 && Math.abs(o.y - e.y) < 4) { isNew = false; break; } }
+    if (isNew) spawnBurst(e.x, e.y, 22, 3.2, 2.4, ['#fff0c0', '#ffb040', '#ff7a30', '#7a4030']); // 火球碎屑
+  }
 }
 
 // 把当前帧子弹与上一帧子弹按最近邻配对，估出每颗子弹的单位方向向量 {dx,dy}，存到 b.dirx/b.diry。
@@ -271,6 +285,14 @@ function handleSoundEvents(snap) {
         case 'shot':
           // 同帧多人开枪时最多播 3 声，避免嘈杂；自己的枪声更响
           if (shots < 3) { SFX.shootWeapon(ev.w || 0, ev.ownerId === net.yourFighterId ? 0.35 : 0.16); shots++; }
+          // 枪口火光：在开火者枪口位置闪一下（霰弹更大）
+          if (typeof spawnMuzzle === 'function') {
+            const sh = snap.fighters.find((f) => f.id === ev.ownerId);
+            if (sh && sh.alive) {
+              const mx = sh.x + Math.cos(sh.angle) * 26, my = sh.y + Math.sin(sh.angle) * 26;
+              spawnMuzzle(mx, my, sh.angle, null, ev.w === 2 ? 1.6 : (ev.w === 3 ? 1.4 : 1));
+            }
+          }
           break;
         case 'weapon': SFX.weaponPickup(); break;
         case 'throw': SFX.throwNade(); break;
@@ -280,6 +302,11 @@ function handleSoundEvents(snap) {
         case 'hit':
           if (ev.victim === net.yourFighterId) { SFX.hurt(); triggerHurtFlash(0.35); } // 你被打中：小闪
           else if (ev.by === net.yourFighterId) { SFX.hitmarker(); popDamage(snap, ev, false); } // 你打中敌人：飘伤害字
+          // 命中火花：在受害者位置溅一簇（红橙色血花感），所有人可见
+          if (typeof spawnSparks === 'function') {
+            const v = snap.fighters.find((f) => f.id === ev.victim);
+            if (v) spawnSparks(v.x, v.y, 6, '#ff9a4a');
+          }
           break;
         case 'death':
           if (ev.victim === net.yourFighterId) {
@@ -291,6 +318,14 @@ function handleSoundEvents(snap) {
           }
           // 每次有人阵亡都滚一条击杀提示（不只你的）
           if (typeof pushKillFeed === 'function') pushKillFeed(ev.by, ev.victim, ev.w);
+          // 阵亡爆裂：一大簇彩色碎屑 + 队伍色，所有人可见
+          if (typeof spawnBurst === 'function') {
+            const v = snap.fighters.find((f) => f.id === ev.victim);
+            if (v) {
+              const teamCol = v.team === 'red' ? '#ff6a6a' : '#7fe06a';
+              spawnBurst(v.x, v.y, 20, 2.8, 2.2, ['#fff', '#ffd060', '#ff8a3a', teamCol]);
+            }
+          }
           break;
         case 'multikill':
           // 连杀播报：你自己的连杀播语音 + 全员看 kill feed 大字
