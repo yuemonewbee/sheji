@@ -135,18 +135,62 @@ function updateMotion(id, x, y) {
   return m;
 }
 
+// 地图主题：按地图名给一套配色（地面底/地面格线/墙顶/墙侧阴影）。让 8 张图视觉上区分开。
+const MAP_THEMES = {
+  '对称竞技场':       { floor: '#23252e', grid: '#2c2f3a', wallTop: '#6b6b80', wallSide: '#3c3c4a' }, // 中性竞技
+  '中央十字':         { floor: '#1f2630', grid: '#28313d', wallTop: '#5f7088', wallSide: '#33404f' }, // 冷蓝科技
+  '走廊交错':         { floor: '#2a241d', grid: '#352d23', wallTop: '#8a7355', wallSide: '#4d3f2e' }, // 暖褐仓库
+  '四角据点':         { floor: '#262022', grid: '#312a2c', wallTop: '#7a5f6a', wallSide: '#43343b' }, // 暗红据点
+  '狭巷（小）':       { floor: '#22282a', grid: '#2b3335', wallTop: '#5f7a78', wallSide: '#33433f' }, // 青灰小巷
+  '环形要塞（大）':   { floor: '#1e2228', grid: '#272d35', wallTop: '#667584', wallSide: '#333d49' }, // 钢铁要塞
+  '双子堡垒（大）':   { floor: '#28221e', grid: '#332b25', wallTop: '#8a6f50', wallSide: '#4c3c2b' }, // 沙黄堡垒
+  '辽阔战场（超大）': { floor: '#202a22', grid: '#28342b', wallTop: '#5d7a5f', wallSide: '#324433' }, // 草绿战场
+  '之字走廊':         { floor: '#241f2a', grid: '#2d2735', wallTop: '#6a5f88', wallSide: '#3a3350' }, // 紫调走廊
+};
+const DEFAULT_THEME = { floor: '#1e1e28', grid: '#272733', wallTop: '#6b6b80', wallSide: '#3a3a4a' };
+function mapTheme(cfg) {
+  return (cfg && MAP_THEMES[cfg.mapName]) || DEFAULT_THEME;
+}
+
+// 画地面：底色 + 微妙格线纹理（不喧宾夺主，只给场景"质感"）
+function drawFloor(ctx, cfg, th) {
+  ctx.fillStyle = th.floor;
+  ctx.fillRect(0, 0, cfg.width, cfg.height);
+  ctx.strokeStyle = th.grid;
+  ctx.lineWidth = 1;
+  const STEP = 64;
+  ctx.beginPath();
+  for (let x = STEP; x < cfg.width; x += STEP) { ctx.moveTo(x, 0); ctx.lineTo(x, cfg.height); }
+  for (let y = STEP; y < cfg.height; y += STEP) { ctx.moveTo(0, y); ctx.lineTo(cfg.width, y); }
+  ctx.stroke();
+}
+
+// 画墙：底边阴影 + 顶面亮色 + 描边，做出俯视立体感
+function drawWalls(ctx, cfg, th) {
+  // 先画所有墙的底部阴影（向下偏移一点的深色），形成"墙有高度"的错觉
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  for (const w of cfg.walls) ctx.fillRect(w.x, w.y + 4, w.w, w.h);
+  // 墙侧（深色底）
+  ctx.fillStyle = th.wallSide;
+  for (const w of cfg.walls) ctx.fillRect(w.x, w.y, w.w, w.h);
+  // 墙顶（亮色，略微内缩，露出侧面的深色边）
+  ctx.fillStyle = th.wallTop;
+  for (const w of cfg.walls) ctx.fillRect(w.x, w.y, w.w, w.h - 3);
+}
+
 // 画一帧。读取 net.config / net.state / net.yourFighterId。
 function drawFrame(ctx) {
   const cfg = net.config;
   const st = netGetView(); // 插值后的平滑画面
   if (!cfg || !st) return;
+  const th = mapTheme(cfg);
 
-  // 1) 清屏
+  // 1) 地面（主题底色 + 格线）
   ctx.clearRect(0, 0, cfg.width, cfg.height);
+  drawFloor(ctx, cfg, th);
 
-  // 2) 墙
-  ctx.fillStyle = '#6b6b80';
-  for (const w of cfg.walls) ctx.fillRect(w.x, w.y, w.w, w.h);
+  // 2) 墙（带立体感）
+  drawWalls(ctx, cfg, th);
 
   // 2.5) 占点圈（仅 koth）：颜色随控制方变化——绿/红/争夺(黄)/无人(灰)
   if (cfg.zone) drawZone(ctx, cfg.zone, st);
@@ -799,10 +843,10 @@ function drawFlag(ctx, x, y, color, state) {
 // ---------- 大厅地图缩略图 ----------
 function drawMapPreview(canvas, map) {
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#2b2b3a';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
   // 随机地图：没有固定布局，画一个占位提示（每局现场生成）
   if (map.random) {
+    ctx.fillStyle = '#2b2b3a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#cdd';
@@ -815,8 +859,12 @@ function drawMapPreview(canvas, map) {
     ctx.textBaseline = 'alphabetic';
     return;
   }
+  // 缩略图也用地图主题色，房主选图时就能看出不同色调
+  const th = MAP_THEMES[map.name] || DEFAULT_THEME;
+  ctx.fillStyle = th.floor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   const sx = canvas.width / map.width;
   const sy = canvas.height / map.height;
-  ctx.fillStyle = '#6b6b80';
+  ctx.fillStyle = th.wallTop;
   for (const w of map.walls) ctx.fillRect(w.x * sx, w.y * sy, w.w * sx, w.h * sy);
 }
