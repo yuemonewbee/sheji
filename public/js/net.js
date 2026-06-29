@@ -114,6 +114,10 @@ function handleMessage(msg) {
       // 服务器私密告知我本次的复活点（对手收不到这条），死亡期间预览用
       net.myRespawn = { x: msg.x, y: msg.y };
       break;
+    case 'emote':
+      // 某玩家发了表情：在他头顶冒个气泡（渲染层处理）
+      if (typeof spawnEmote === 'function') spawnEmote(msg.id, msg.e);
+      break;
     case 'roster': {
       // 名册更新：重建 id->静态信息 与 nid->静态信息 两张映射，并算出"我"的 nid
       net.rosterById = {};
@@ -315,15 +319,25 @@ function handleSoundEvents(snap) {
           } else if (ev.by === net.yourFighterId) {
             if (ev.w === 3) SFX.snipeKill(); else SFX.kill(); // 你击杀：狙杀用更重的音
             popDamage(snap, ev, true); // 你击杀：飘一个更醒目的击杀字
+            // 击杀确认：在被杀者位置弹 ✖ + 白闪（狙杀更醒目/紫色/带"狙杀"字）
+            if (typeof triggerKillConfirm === 'function') {
+              const vk = snap.fighters.find((f) => f.id === ev.victim);
+              if (vk) triggerKillConfirm(ev.w === 3, vk.x, vk.y);
+            }
           }
           // 每次有人阵亡都滚一条击杀提示（不只你的）
           if (typeof pushKillFeed === 'function') pushKillFeed(ev.by, ev.victim, ev.w);
-          // 阵亡爆裂：一大簇彩色碎屑 + 队伍色，所有人可见
+          // 阵亡爆裂：一大簇彩色碎屑 + 队伍色 + 一道白色冲击环，所有人可见
           if (typeof spawnBurst === 'function') {
             const v = snap.fighters.find((f) => f.id === ev.victim);
             if (v) {
               const teamCol = v.team === 'red' ? '#ff6a6a' : '#7fe06a';
               spawnBurst(v.x, v.y, 20, 2.8, 2.2, ['#fff', '#ffd060', '#ff8a3a', teamCol]);
+              if (typeof spawnShockRing === 'function') {
+                // 狙杀冲击环更大更紫
+                if (ev.w === 3) spawnShockRing(v.x, v.y, 60, 'rgba(197,108,255,', 5, 420);
+                else spawnShockRing(v.x, v.y, 42, 'rgba(255,255,255,', 4, 340);
+              }
             }
           }
           break;
@@ -353,6 +367,7 @@ function netSendInput(inp) {
   });
 }
 function netThrow(x, y) { netSend({ type: 'throw', x: x, y: y }); }
+function netEmote(e) { netSend({ type: 'emote', e: e }); }
 
 function netCreateRoom() { netSend({ type: 'createRoom', name: net.playerName || '' }); }
 function netJoinRoom(code) { netSend({ type: 'joinRoom', code: code, name: net.playerName || '' }); }

@@ -4,7 +4,8 @@
   "description": "网页2D多人射击小游戏",
   "main": "server/server.js",
   "scripts": {
-    "start": "node server/server.js"
+    "start": "node server/server.js",
+    "test": "node test/run.js"
   },
   "keywords": [],
   "author": "",

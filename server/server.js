@@ -513,6 +513,12 @@ function handleMessage(ws, msg) {
     case 'throw': // 真人扔手雷（一次性）
       if (room.inputs[c.id]) room.inputs[c.id].throw = { x: msg.x, y: msg.y };
       break;
+
+    case 'emote': // 表情：转发给房间所有人，各客户端在该玩家头顶画表情气泡（纯社交，不影响战斗）
+      if (room.phase === 'playing' && Number.isInteger(msg.e) && msg.e >= 0 && msg.e < 16) {
+        broadcast(room, { type: 'emote', id: c.id, e: msg.e });
+      }
+      break;
   }
 }
 

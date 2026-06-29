@@ -7,6 +7,7 @@
 // 开局倒计时 / GO 状态
 let lastCountdown = -1;
 let goFlashUntil = 0;
+let lastCountSec = 0; // 上次播报的读秒（3/2/1），用于"数字变化才播一声"
 function drawBigCenterText(ctx, cfg, text, color) {
   ctx.save();
   ctx.textAlign = 'center';
@@ -23,6 +24,47 @@ function drawBigCenterText(ctx, cfg, text, color) {
 // 受击/阵亡红色闪屏：被打中闪一下，被一枪带走闪得更狠。每帧衰减。
 let hurtFlash = 0;
 function triggerHurtFlash(amount) { hurtFlash = Math.min(0.8, Math.max(hurtFlash, amount)); }
+
+// 表情喷漆：可选的表情列表（emoji），按键/按钮触发，头顶冒气泡 ~2.5s（纯社交）
+const EMOTES = ['👍', '😎', '😂', '😡', '💀', '❤️'];
+const activeEmotes = {}; // fighterId -> { e, t0 }
+const EMOTE_TTL = 2500;
+function spawnEmote(fighterId, e) {
+  if (e < 0 || e >= EMOTES.length) return;
+  activeEmotes[fighterId] = { e: e, t0: performance.now() };
+}
+// 在所有有活跃表情的玩家头顶画气泡
+function drawEmotes(ctx, st) {
+  const now = performance.now();
+  for (const f of st.fighters) {
+    const em = activeEmotes[f.id];
+    if (!em) continue;
+    const k = (now - em.t0) / EMOTE_TTL;
+    if (k >= 1) { delete activeEmotes[f.id]; continue; }
+    if (!f.alive) continue; // 死了就不画（但保留计时，复活前自然过期）
+    // 我自己用预测位置，避免气泡和身体错位
+    let fx = f.x, fy = f.y;
+    if (f.id === net.yourFighterId && prediction.active) { fx = prediction.x; fy = prediction.y; }
+    const pop = k < 0.15 ? (k / 0.15) : 1;           // 弹出
+    const fade = k > 0.8 ? (1 - (k - 0.8) / 0.2) : 1; // 末段淡出
+    const by = fy - 44 - (1 - pop) * 8;               // 气泡中心 y（在名字上方）
+    ctx.save();
+    ctx.globalAlpha = fade;
+    // 气泡背景（白圆 + 小尾巴）
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(fx, by, 15 * pop, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(fx - 5, by + 11); ctx.lineTo(fx + 5, by + 11); ctx.lineTo(fx, by + 18); ctx.closePath();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fill();
+    // 表情
+    ctx.font = (Math.round(20 * pop)) + 'px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(EMOTES[em.e], fx, by + 1);
+    ctx.restore();
+  }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
 
 // 伤害飘字：只显示"你自己造成的"伤害，同一目标短时累加成一个数字，小字上飘快淡出。
 const dmgPops = [];
@@ -42,6 +84,23 @@ function spawnDamagePop(victimId, x, y, amount, kill) {
 const muzzles = [];   // 枪口火光：{x,y,ang,t0,ttl,color,size}
 const sparks = [];    // 命中火花粒子：{x,y,vx,vy,t0,ttl,color,size}
 const MAX_SPARKS = 400; // 上限，防爆量（爆炸/死亡碎屑较多，留足余量；都是小圆，开销可忽略）
+
+// 冲击环：从 (x,y) 扩散的一道圆环（击杀/狙杀用）。{x,y,t0,ttl,r0,r1,color,width}
+const shockRings = [];
+function spawnShockRing(x, y, r1, color, width, ttl) {
+  shockRings.push({ x: x, y: y, t0: performance.now(), ttl: ttl || 360, r0: 4, r1: r1 || 40, color: color || 'rgba(255,255,255,', width: width || 4 });
+  if (shockRings.length > 40) shockRings.shift();
+}
+
+// 击杀确认：屏幕白闪 + 在被杀者位置弹出放大 ✖ 标记（仅你击杀时）
+let killConfirm = 0;        // >0 时画确认标记，逐帧衰减
+let killConfirmCrit = false; // 是否狙杀/暴击（更醒目）
+let killConfirmX = 0, killConfirmY = 0; // 标记位置（被杀者世界坐标）
+let killFlash = 0;         // 击杀白闪（比受击红闪克制）
+function triggerKillConfirm(crit, x, y) {
+  killConfirm = 1; killConfirmCrit = crit; killConfirmX = x; killConfirmY = y;
+  killFlash = crit ? 0.5 : 0.32;
+}
 
 // 在 (x,y) 朝 ang 方向闪一下枪口火光
 function spawnMuzzle(x, y, ang, color, size) {
@@ -111,7 +170,53 @@ function drawHitFx(ctx) {
     ctx.fillStyle = s.color;
     ctx.beginPath(); ctx.arc(s.x, s.y, s.size * (1 - k * 0.5), 0, Math.PI * 2); ctx.fill();
   }
+  // 冲击环：快速扩张 + 变细变淡（击杀/狙杀的"力道"）
+  ctx.globalCompositeOperation = 'source-over';
+  for (let i = shockRings.length - 1; i >= 0; i--) {
+    const sr = shockRings[i];
+    const k = (now - sr.t0) / sr.ttl;
+    if (k >= 1) { shockRings.splice(i, 1); continue; }
+    const r = sr.r0 + (sr.r1 - sr.r0) * (1 - (1 - k) * (1 - k)); // 先快后慢扩张
+    ctx.globalAlpha = (1 - k);
+    ctx.strokeStyle = sr.color + (0.8 * (1 - k)) + ')';
+    ctx.lineWidth = Math.max(1, sr.width * (1 - k));
+    ctx.beginPath(); ctx.arc(sr.x, sr.y, r, 0, Math.PI * 2); ctx.stroke();
+  }
   ctx.restore();
+}
+
+// 击杀确认（白闪全屏 + 被杀者位置弹出放大 ✖）。在 drawFrame 末尾画。
+function drawKillFx(ctx, cfg) {
+  if (killFlash > 0.02) {
+    ctx.fillStyle = 'rgba(255,255,255,' + (killFlash * 0.5) + ')';
+    ctx.fillRect(0, 0, cfg.width, cfg.height);
+    killFlash *= 0.82;
+  } else killFlash = 0;
+  if (killConfirm > 0.02) {
+    const k = 1 - killConfirm;        // 0→1 推进
+    const cx = killConfirmX, cy = killConfirmY;
+    const size = 22 + k * 16;         // 放大
+    const a = Math.min(1, killConfirm * 1.2); // 淡出
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = killConfirmCrit ? 6 : 4.5;
+    ctx.strokeStyle = killConfirmCrit ? '#c56cff' : '#fff'; // 狙杀紫，普通白
+    const d = size * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - d, cy - d); ctx.lineTo(cx + d, cy + d);
+    ctx.moveTo(cx + d, cy - d); ctx.lineTo(cx - d, cy + d);
+    ctx.stroke();
+    if (killConfirmCrit) { // 狙杀加一行字
+      ctx.fillStyle = '#c56cff';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('狙杀', cx, cy - size);
+      ctx.textAlign = 'left';
+    }
+    ctx.restore();
+    killConfirm *= 0.9;
+  } else killConfirm = 0;
 }
 
 // 武器外观表（下标 = 服务器 WEAPONS 里的 idx）：名字 / 颜色 / 拾取物上的字
@@ -330,6 +435,9 @@ function drawFrame(ctx) {
   // 7.3) 打击特效：枪口火光 + 命中火花
   drawHitFx(ctx);
 
+  // 7.35) 表情气泡（玩家头顶）
+  drawEmotes(ctx, st);
+
   // 7.4) 伤害飘字（只有你造成的伤害）：小字向上飘 + 淡出；击杀用更大的红字
   if (dmgPops.length) {
     const dnow = performance.now();
@@ -369,13 +477,28 @@ function drawFrame(ctx) {
     hurtFlash = 0;
   }
 
-  // 7.8) 开局倒计时 3-2-1-GO
+  // 7.6) 击杀确认：白闪 + 中央 ✖（仅你击杀时触发）
+  drawKillFx(ctx, cfg);
+
+  // 7.8) 开局倒计时 3-2-1-GO（+ 语音/音效播报）
   if (st.countdown !== undefined) {
     const now = performance.now();
-    if (lastCountdown > 0 && st.countdown === 0) goFlashUntil = now + 700; // 刚结束 → 闪 GO
+    if (lastCountdown > 0 && st.countdown === 0) {
+      goFlashUntil = now + 700;       // 刚结束 → 闪 GO
+      if (typeof SFX !== 'undefined') SFX.fight(); // 开打号令 + "Fight!"
+    }
     lastCountdown = st.countdown;
-    if (st.countdown > 0) drawBigCenterText(ctx, cfg, '' + Math.ceil(st.countdown / 30), 'rgba(255,255,255,0.95)');
-    else if (now < goFlashUntil) drawBigCenterText(ctx, cfg, 'GO!', '#5fd35f');
+    if (st.countdown > 0) {
+      const sec = Math.ceil(st.countdown / 30);
+      if (sec !== lastCountSec && sec >= 1 && sec <= 3) { // 读秒数字变化才播一声
+        lastCountSec = sec;
+        if (typeof SFX !== 'undefined') SFX.countTick(sec);
+      }
+      drawBigCenterText(ctx, cfg, '' + sec, 'rgba(255,255,255,0.95)');
+    } else {
+      lastCountSec = 0; // 复位，下一局的 3 能再触发
+      if (now < goFlashUntil) drawBigCenterText(ctx, cfg, 'GO!', '#5fd35f');
+    }
   }
 
   // 7.9) 最后存活：回合结算展示（半透明遮罩 + 本回合赢家）

@@ -29,12 +29,25 @@ function toWorld(canvas, e) {
 }
 
 let inputInstalled = false;
+let lastEmoteAt = 0; // 表情冷却计时
 function setupInput(canvas) {
   if (inputInstalled) return;
   inputInstalled = true;
 
   window.addEventListener('keydown', (e) => setKey(e.key, true));
   window.addEventListener('keyup', (e) => setKey(e.key, false));
+
+  // 表情喷漆：数字键 1~6 发对应表情（带 1.2s 冷却防刷屏）。纯社交，不影响战斗。
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= 6 && typeof netEmote === 'function') {
+      const now = Date.now();
+      if (now - lastEmoteAt < 1200) return; // 冷却
+      lastEmoteAt = now;
+      netEmote(n - 1);
+    }
+  });
 
   // 屏蔽右键相关的浏览器默认行为，避免误操作
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());

@@ -183,6 +183,20 @@ const SFX = {
   },
   hitmarker() { this._tone(1200, 0.05, 'square', 0.16); },      // 你打中了敌人
   hurt() { this._tone(300, 0.18, 'sawtooth', 0.28, 160); },     // 你被打中
+  // 开局倒计时滴答：3/2/1 各一声，音高随读秒升高，紧张感渐起
+  countTick(n) {
+    const freq = n === 1 ? 660 : (n === 2 ? 560 : 480);
+    this._tone(freq, 0.12, 'square', 0.3);
+    this._tone(freq * 2, 0.08, 'sine', 0.12, null, 0.005);
+  },
+  // 开打号令：一记上扬号角 + 语音 "Fight!"
+  fight() {
+    this._tone(523, 0.10, 'square', 0.32);
+    this._tone(659, 0.10, 'square', 0.32, null, 0.08);
+    this._tone(880, 0.22, 'square', 0.34, null, 0.16);
+    this._tone(180, 0.25, 'sine', 0.5, null, 0.02); // 低频垫底
+    this._speak('Fight!');
+  },
   kill() { this._tone(880, 0.08, 'square', 0.25); this._tone(1320, 0.10, 'square', 0.22, null, 0.08); }, // 你击杀
   snipeKill() { // 狙击一枪毙命：清脆爆头音 + 低频重击
     this._tone(1600, 0.05, 'square', 0.3, 600);

@@ -49,6 +49,29 @@ const touch = {
   exitBtn.textContent = '退出';
   overlay.appendChild(exitBtn);
 
+  // 表情按钮 + 弹出表情条（触屏的表情喷漆入口）
+  const emoteBtn = div('touch-btn touch-emote');
+  emoteBtn.textContent = '😎';
+  overlay.appendChild(emoteBtn);
+  const emoteBar = div('touch-emote-bar');
+  emoteBar.style.display = 'none';
+  const EMOJIS = ['👍', '😎', '😂', '😡', '💀', '❤️'];
+  EMOJIS.forEach(function (emo, idx) {
+    const b = div('touch-emote-item');
+    b.textContent = emo;
+    b.addEventListener('touchstart', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      if (typeof netEmote === 'function') netEmote(idx);
+      emoteBar.style.display = 'none';
+    }, { passive: false });
+    emoteBar.appendChild(b);
+  });
+  overlay.appendChild(emoteBar);
+  emoteBtn.addEventListener('touchstart', function (e) {
+    e.preventDefault(); e.stopPropagation();
+    emoteBar.style.display = emoteBar.style.display === 'none' ? 'flex' : 'none';
+  }, { passive: false });
+
   const rotate = div('rotate-hint');
   rotate.innerHTML = '<div>请把手机横过来 🔄<br><span>横屏体验更好</span></div>';
 
